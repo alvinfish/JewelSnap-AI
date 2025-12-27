@@ -1,0 +1,7 @@
+{
+  "name": "JewelSnap AI: E-commerce Video Frame Extractor",
+  "description": "An intelligent video-to-image solution for jewelry e-commerce that automatically extracts the sharpest frames using algorithmic Laplacian Variance scoring.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
