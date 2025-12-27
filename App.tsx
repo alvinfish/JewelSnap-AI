@@ -24,6 +24,7 @@ export default function App() {
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<Keyframe | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -117,10 +118,42 @@ export default function App() {
     link.click();
   };
 
-  const saveToGallery = (batch: ProductBatch) => {
-    if (batch.status !== ProcessingStatus.COMPLETED) return;
+  const saveToGallery = async (batch: ProductBatch) => {
+    if (batch.status !== ProcessingStatus.COMPLETED || isSharing) return;
     
     const topFrames = batch.frames.filter(f => f.rankId === 1);
+    if (topFrames.length === 0) return;
+
+    // 针对 iPhone/iOS 的优化方案：尝试使用 Web Share API
+    // 这样在 iOS 上会弹出分享面板，用户可以选择“存储 5 张图像”，直接存入相册而非文件夹
+    if (navigator.share && navigator.canShare) {
+      try {
+        setIsSharing(true);
+        const files: File[] = await Promise.all(
+          topFrames.map(async (frame, index) => {
+            const res = await fetch(frame.dataUrl);
+            const blob = await res.blob();
+            return new File([blob], `${batch.productKey}_${index + 1}.jpg`, { type: 'image/jpeg' });
+          })
+        );
+
+        if (navigator.canShare({ files })) {
+          await navigator.share({
+            files,
+            title: '保存精选图',
+            text: `来自 ${batch.productKey} 的精选抽帧`
+          });
+          setIsSharing(false);
+          return;
+        }
+      } catch (err) {
+        console.warn('Share API failed, falling back to traditional download', err);
+      } finally {
+        setIsSharing(false);
+      }
+    }
+
+    // 兜底方案：传统下载逻辑 (在 PC 或 不支持 Share API 的安卓上运行)
     topFrames.forEach((frame, index) => {
       setTimeout(() => {
         const link = document.createElement('a');
@@ -129,7 +162,7 @@ export default function App() {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-      }, index * 250);
+      }, index * 300);
     });
   };
 
@@ -284,10 +317,11 @@ export default function App() {
                         <div className="flex gap-2 w-full sm:w-auto">
                            <button 
                             onClick={() => saveToGallery(activeBatch)}
-                            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors"
+                            disabled={isSharing}
+                            className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 py-2 ${isSharing ? 'bg-slate-200 cursor-not-allowed' : 'bg-slate-100 hover:bg-slate-200'} text-slate-700 rounded-lg text-xs font-bold transition-colors`}
                           >
-                            <PhotoIcon className="w-3.5 h-3.5" />
-                            保存到相册
+                            <PhotoIcon className={`w-3.5 h-3.5 ${isSharing ? 'animate-bounce' : ''}`} />
+                            {isSharing ? '正在准备分享...' : '保存到相册'}
                           </button>
                           <button 
                             onClick={() => downloadZip(activeBatch)}
